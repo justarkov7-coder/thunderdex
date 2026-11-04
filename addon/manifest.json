@@ -1,0 +1,37 @@
+{
+  "manifest_version": 2,
+  "name": "Thunderdex",
+  "version": "1.6.0",
+  "description": "AI chat and scheduled mail tasks for Thunderbird, powered by a local Codex agent and an MCP server.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "thunderdex@justarkov7-coder.github.io",
+      "strict_min_version": "159.0"
+    }
+  },
+  "icons": {"48": "icon.svg", "96": "icon.svg"},
+  "author": "justarkov7-coder",
+  "homepage_url": "https://github.com/justarkov7-coder/thunderdex",
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "permissions": [],
+  "experiment_apis": {
+    "mailTerminal": {
+      "schema": "schema.json",
+      "parent": {
+        "scopes": [
+          "addon_parent"
+        ],
+        "paths": [
+          [
+            "mailTerminal"
+          ]
+        ],
+        "script": "api.js"
+      }
+    }
+  }
+}

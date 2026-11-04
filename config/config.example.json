@@ -1,0 +1,5 @@
+{
+  "mailboxes": ["me@example.com", "work@example.com"],
+  "timezone": "Europe/Paris",
+  "codex": "/usr/local/bin/codex"
+}

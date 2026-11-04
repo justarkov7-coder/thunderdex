@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+dist/
+node_modules/
+.DS_Store
+service/workspace/*
+!service/workspace/AGENTS.md

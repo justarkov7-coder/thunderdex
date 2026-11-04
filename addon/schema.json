@@ -1,0 +1,94 @@
+[
+  {
+    "namespace": "mailTerminal",
+    "functions": [
+      {
+        "name": "start",
+        "type": "function",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "request",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "op",
+            "type": "string"
+          },
+          {
+            "name": "params",
+            "type": "object",
+            "additionalProperties": true
+          }
+        ]
+      },
+      {
+        "name": "openLogin",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "url",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "name": "reportReady",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "info",
+            "type": "object",
+            "additionalProperties": true
+          }
+        ]
+      },
+      {
+        "name": "streamStart",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "id",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "name": "streamStop",
+        "type": "function",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "syncNavigation",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "data",
+            "type": "object",
+            "additionalProperties": true
+          }
+        ]
+      }
+    ],
+    "events": [
+      {
+        "name": "onChatEvent",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "event",
+            "type": "object",
+            "additionalProperties": true
+          }
+        ]
+      }
+    ]
+  }
+]

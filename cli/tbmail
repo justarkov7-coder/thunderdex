@@ -1,0 +1,4 @@
+#!/bin/sh
+# Thin wrapper: run the CLI with the thunderbird-mcp virtualenv.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+exec "${TBMCP_PYTHON:-$HOME/.local/share/thunderbird-mcp/.venv/bin/python}" "$HERE/tbmail.py" "$@"
