@@ -26,7 +26,7 @@ var ThunderdexTagRows = class {
     const info={pane,doc,sheet,popup,pending:false,stopped:false};
     const schedule=()=>{if(info.pending||info.stopped)return;info.pending=true;pane.requestAnimationFrame(()=>{info.pending=false;if(!info.stopped)this.render(info);});};
     info.observer=new pane.MutationObserver(records=>{
-      if(records.every(r=>r.target.closest?.('.thunderdex-tag-list')))return;
+      if(records.every(r=>r.target.closest?.('.thunderdex-tag-list')||[...r.addedNodes,...r.removedNodes].every(n=>n.classList?.contains('thunderdex-tag-list'))))return;
       schedule();
     });
     info.observer.observe(pane.threadTree,{childList:true,subtree:true,attributes:true,attributeFilter:['data-properties']});

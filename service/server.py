@@ -219,6 +219,7 @@ class Application:
         STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(STATE, 0o700)
         self.lock = threading.RLock()
+        self.dirty = False
         self.path = STATE / 'state.json'
         self.db = json.loads(self.path.read_text()) if self.path.exists() else {'chats': {}, 'tasks': {}}
         self.approvals = {}
@@ -265,7 +266,17 @@ class Application:
 
     def save(self):
         with self.lock:
+            self.dirty = False
             atomic(self.path, self.db)
+
+    def save_later(self):
+        self.dirty = True
+
+    def writer(self):
+        while True:
+            time.sleep(2)
+            if self.dirty:
+                self.save()
 
     def event(self, message):
         method, p = message['method'], message.get('params', {})
@@ -305,7 +316,7 @@ class Application:
                 else:
                     chat['messages'].append({'role': 'assistant', 'text': v.get('text', ''), 'itemId': v['id']})
                 self.publish(thread_id, {'kind': 'message', 'itemId': v['id'], 'text': v.get('text', ''), 'revision': chat['revision']})
-                self.save()
+                self.save_later()
             elif method == 'item/started':
                 item = p.get('item', {})
                 if item.get('type') in ('mcpToolCall', 'dynamicToolCall', 'commandExecution', 'fileChange', 'webSearch'):
@@ -389,6 +400,8 @@ class Application:
         params = {'cwd': WORK, 'approvalPolicy': 'on-request', 'sandbox': 'workspace-write'}
         if instructions:
             params['developerInstructions'] = instructions
+        if actions is None and origin == 'ask':
+            actions = action_options({'mode': 'write', 'organize': True, 'trash': True, 'send': True})
         config = tool_config(actions) if actions else {}
         if config:
             params['config'] = config
@@ -439,16 +452,20 @@ class Application:
         finally:
             self.alerts_running = False
 
+    def refresh_account(self):
+        try:
+            self.account = self.codex.call('account/read', {'refreshToken': False}).get('account')
+        except Exception as e:
+            self.account = {'error': str(e)}
+        finally:
+            self.account_time = time.time()
+            self.account_busy = False
+
     def state(self, key=None):
         # Login status is read through the official protocol, never by copying credentials.
-        if time.time() - self.account_time > 300:
-            try:
-                result = self.codex.call('account/read', {'refreshToken': False})
-                self.account = result.get('account')
-                self.account_time = time.time()
-            except Exception as e:
-                self.account = {'error': str(e)}
-                self.account_time = time.time()
+        if time.time() - self.account_time > 300 and not getattr(self, 'account_busy', False):
+            self.account_busy = True
+            threading.Thread(target=self.refresh_account, daemon=True).start()
         with self.lock:
             chats = sorted(self.db['chats'].values(), key=lambda c: c['updated'], reverse=True)
             planned = set(r.get('chatId') for t in self.db['tasks'].values() for r in t.get('runs', []))
@@ -667,7 +684,8 @@ def main():
     os.chmod(SOCKET, 0o600)
     server.app = app
     threading.Thread(target=app.scheduler, daemon=True).start()
-    threading.Thread(target=lambda: app.state(), daemon=True).start()  # Warm Codex + login before the first click.
+    threading.Thread(target=app.refresh_account, daemon=True).start()
+    threading.Thread(target=app.writer, daemon=True).start()  # Warm Codex + login before the first click.
     def stop(*_):
         app.save()
         if app.codex.proc and app.codex.proc.poll() is None:

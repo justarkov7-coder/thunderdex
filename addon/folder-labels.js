@@ -15,8 +15,8 @@ var ThunderdexFolderLabels = class {
   attach(pane){
     const doc=pane.document,tree=doc.getElementById('folderTree');if(!tree||this.documents.has(doc))return;
     const info={pane,tree,original:new Map(),pending:false,stopped:false};
-    const run=()=>{if(info.pending||info.stopped)return;info.pending=true;pane.requestAnimationFrame(()=>{info.pending=false;if(!info.stopped)this.render(info);});};
-    info.observer=new pane.MutationObserver(run);info.observer.observe(tree,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-folder-type']});
+    const run=()=>{if(info.pending||info.stopped)return;info.pending=true;pane.requestAnimationFrame(()=>{info.pending=false;if(!info.stopped){this.render(info);info.observer.takeRecords();}});};
+    info.observer=new pane.MutationObserver(run);info.observer.observe(tree,{childList:true,subtree:true,attributes:true,attributeFilter:['data-folder-type']});
     info.onSelect=run;tree.addEventListener('select',run);
     this.documents.set(doc,info);this.render(info);doc.body.dataset.thunderdexFolderLabels='ready';
     pane.addEventListener('unload',()=>this.detach(doc),{once:true});
