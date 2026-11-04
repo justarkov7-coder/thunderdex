@@ -1,0 +1,6 @@
+[
+  {
+    "namespace": "gmailRowArchive",
+    "functions": [{"name": "start", "type": "function", "async": true, "parameters": []}]
+  }
+]

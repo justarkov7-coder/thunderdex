@@ -41,6 +41,7 @@ Thunderbird ──(experiment API, Unix socket)──▶ service/server.py ─�
 |---|---|
 | `addon/` | Thunderbird add-on (MV2 + experiment API): sidebar entries, chat UI, task UI, native tag chips, folder label harmonisation. Talks **directly** to the socket from Gecko, with no helper process per request. |
 | `service/server.py` | Single long-running Python process: Codex session manager, token streaming, task scheduler, approval broker, alert runner. |
+| `row-actions/` | Optional companion add-on: one-click **archive** button next to each row's trash, and **rapid trash clicks** (Thunderbird drops clicks with `detail > 1`; each fast repeat now deletes the row under the pointer). |
 | `cli/tbmail` | Terminal client for the same MCP tools (`tbmail inbox`, `tbmail search`, `tbmail alerts …`). |
 
 ## Safety model
@@ -77,6 +78,7 @@ $EDITOR ~/.config/thunderdex/config.json   # list the mailboxes tasks may use
 ```
 
 Then in Thunderbird: **Add-ons Manager → ⚙ → Install Add-on From File… → `dist/thunderdex.xpi`**.
+Optional: `python3 row-actions/build.py` and install `dist/thunderdex-row-actions.xpi` the same way.
 
 > Experiment APIs run with full privileges. Experiment add-ons are accepted on addons.thunderbird.net only after manual review, so for now install from source and read the code first (it is short).
 
@@ -129,6 +131,7 @@ Thunderbird ──(API expérimentale, socket Unix)──▶ service/server.py �
 |---|---|
 | `addon/` | Module Thunderbird (MV2 + API expérimentale) : entrées dans la barre latérale, interface du chat et des tâches, pastilles d'étiquettes natives, harmonisation des noms de dossiers. Parle **directement** au socket depuis Gecko, sans lancer de processus par requête. |
 | `service/server.py` | Un seul processus Python permanent : gestion des sessions Codex, streaming des réponses, planificateur, validations, alertes. |
+| `row-actions/` | Module compagnon optionnel : bouton **archiver** en un clic à côté de la corbeille de chaque ligne, et **suppression en clics rapides** (Thunderbird ignore les clics avec `detail > 1` ; chaque clic rapide supprime désormais la ligne sous le curseur). |
 | `cli/tbmail` | Client en ligne de commande pour les mêmes outils MCP (`tbmail inbox`, `tbmail search`, `tbmail alerts …`). |
 
 ### Sécurité
@@ -165,6 +168,7 @@ $EDITOR ~/.config/thunderdex/config.json   # liste les boîtes mail utilisables 
 ```
 
 Ensuite dans Thunderbird : **Modules complémentaires → ⚙ → Installer un module depuis un fichier… → `dist/thunderdex.xpi`**.
+Optionnel : `python3 row-actions/build.py`, puis installe `dist/thunderdex-row-actions.xpi` de la même façon.
 
 > Les API expérimentales s'exécutent avec tous les privilèges. Sur addons.thunderbird.net, les modules qui en utilisent ne sont acceptés qu'après une revue manuelle. Pour l'instant, installe-le depuis les sources et lis le code avant (il est court).
 

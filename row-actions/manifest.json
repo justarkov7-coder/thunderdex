@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Thunderdex Row Actions",
+  "description": "One-click archive button next to the trash in the message list, and rapid repeated trash clicks.",
+  "version": "1.0.3",
+  "browser_specific_settings": {"gecko": {"id": "thunderdex-row-actions@justarkov7-coder.github.io", "strict_min_version": "159.0"}},
+  "background": {"scripts": ["background.js"]},
+  "permissions": [],
+  "experiment_apis": {
+    "gmailRowArchive": {
+      "schema": "schema.json",
+      "parent": {"scopes": ["addon_parent"], "paths": [["gmailRowArchive"]], "script": "api.js"}
+    }
+  }
+}
