@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Thunderdex",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "AI chat and scheduled mail tasks for Thunderbird, powered by a local Codex agent and an MCP server.",
   "browser_specific_settings": {
     "gecko": {

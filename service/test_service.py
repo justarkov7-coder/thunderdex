@@ -119,5 +119,36 @@ class ServiceTests(unittest.TestCase):
         key2=self.app.task_save({'name':'W','prompt':'x','frequency':'once','nextRun':time.time()+3600,'actions':{'mode':'write'}})['id']
         self.app.run_task(key2);third=mod.Application()
         self.assertFalse(third.db['tasks'][key2]['retry'])
+    def test_planned_runs_share_one_thread(self):
+        key=self.task('daily');self.app.run_task(key);t=self.app.db['tasks'][key];first=t['activeChat']
+        self.app.event({'method':'turn/completed','params':{'threadId':first,'turn':{'status':'completed'}}})
+        self.app.run_task(key)
+        self.assertEqual(t['activeChat'],first);self.assertEqual(self.app.codex.count,1)
+        roles=[m['role'] for m in self.app.db['chats'][first]['messages']]
+        self.assertEqual(roles,['run','run'])
+    def test_policy_change_rotates_thread_but_keeps_history(self):
+        key=self.task('daily');self.app.run_task(key);t=self.app.db['tasks'][key];first=t['activeChat']
+        self.app.event({'method':'turn/completed','params':{'threadId':first,'turn':{'status':'completed'}}})
+        t['actions']={'mode':'draft','organize':False,'trash':False,'send':False};self.app.run_task(key)
+        self.assertNotEqual(t['activeChat'],first);self.assertNotIn(first,self.app.db['chats'])
+        self.assertEqual(len(self.app.db['chats'][t['activeChat']]['messages']),2)
+    def test_delete_chat(self):
+        key=self.app.new_chat();self.app.request('chat.delete',{'id':key})
+        self.assertNotIn(key,self.app.db['chats'])
+        self.assertIn('thread/archive',[m for m,_ in self.app.codex.calls])
+    def test_always_allow_is_remembered(self):
+        self.app.event({'id':20,'method':'item/commandExecution/requestApproval','params':{'command':['python3','x.py']}})
+        self.app.request('approval.reply',{'id':'20','decision':'accept','always':True})
+        self.app.event({'id':21,'method':'item/commandExecution/requestApproval','params':{'command':['python3','x.py']}})
+        import time as _t;_t.sleep(0.05)
+        self.assertEqual(self.app.codex.messages[-1],{'id':21,'result':{'decision':'accept'}})
+        self.app.event({'id':22,'method':'item/commandExecution/requestApproval','params':{'command':['rm','-rf','x']}})
+        _t.sleep(0.05);self.assertIn('22',self.app.approvals)
+    def test_planned_runs_never_prompt(self):
+        key=self.task();self.app.run_task(key)
+        start=next(p for m,p in self.app.codex.calls if m=='thread/start')
+        self.assertEqual(start['approvalPolicy'],'never')
+        self.app.new_chat()
+        self.assertEqual([p for m,p in self.app.codex.calls if m=='thread/start'][-1]['approvalPolicy'],'on-request')
 
 if __name__=='__main__':unittest.main()

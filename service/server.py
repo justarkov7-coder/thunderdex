@@ -236,6 +236,9 @@ class Application:
         for task in self.db['tasks'].values():
             if task.get('running'):
                 task.update(running=False, lastStatus='interrupted', retry=self.safe_retry(task))
+        if not self.db.get('threadsMerged'):
+            self.merge_planned()
+            self.db['threadsMerged'] = True
         self.save()
 
     def codex_died(self, proc):
@@ -286,9 +289,12 @@ class Application:
         with self.lock:
             chat = self.db['chats'].get(thread_id)
             if 'id' in message:
-                # Every approval stays explicit; never accept an agent request automatically.
+                # Explicit unless the user chose "always allow" for this exact kind of request.
                 key = str(message['id'])
                 self.approvals[key] = {'id': message['id'], 'method': method, 'params': p, 'threadId': thread_id}
+                if self.rule_key(method, p) in self.db.get('autoApprove', []):
+                    threading.Thread(target=self.answer, args=(key, {'decision': 'accept'}), daemon=True).start()
+                    return
                 if chat:
                     self.notify('Thunderdex', 'Validation attendue : ' + chat.get('title', ''))
                     chat['status'] = 'approval'
@@ -397,7 +403,9 @@ class Application:
         return next((m['text'] for m in reversed(chat['messages']) if m['role'] == 'assistant'), '')
 
     def new_chat(self, title='Nouvelle conversation', origin='ask', instructions=None, actions=None):
-        params = {'cwd': WORK, 'approvalPolicy': 'on-request', 'sandbox': 'workspace-write'}
+        # Planned jobs run unattended: their tool allowlist is the guard, so they never stop to ask.
+        unattended = origin == 'planned' or (locals().get('rgpd') is True)
+        params = {'cwd': WORK, 'approvalPolicy': 'never' if unattended else 'on-request', 'sandbox': 'workspace-write'}
         if instructions:
             params['developerInstructions'] = instructions
         if actions is None and origin == 'ask':
@@ -414,7 +422,92 @@ class Application:
             self.save()
         return key
 
-    def send(self, key, text):
+    def planned_chat(self, current, title, instructions, actions, **extra):
+        """Reuse the job's thread; rotate it only when its enforced policy changed, keeping history."""
+        signature = json.dumps([instructions, tool_config(actions) if actions else {}], sort_keys=True)
+        with self.lock:
+            old = self.db['chats'].get(current) if current else None
+            if old and old.get('status') in ('running', 'approval'):
+                raise ValueError('Exécution précédente encore active.')
+            if old and old.get('policy') == signature:
+                old['title'] = title
+                return current
+        key = self.new_chat(title, origin='planned', instructions=instructions, actions=actions, **extra)
+        with self.lock:
+            chat = self.db['chats'][key]
+            chat['policy'] = signature
+            if old:
+                chat['messages'] = old['messages'] + chat['messages']
+                self.drop_chat(current)
+            self.save()
+        return key
+
+    def drop_chat(self, key):
+        self.db['chats'].pop(key, None)
+        self.resume.discard(key)
+        for listener in self.subscribers.pop(key, []):
+            try:
+                listener.put_nowait({'kind': 'deleted', 'chatId': key})
+            except queue.Full:
+                pass
+
+    def delete_chat(self, key):
+        with self.lock:
+            chat = self.db['chats'].get(key)
+            if not chat:
+                raise ValueError('Discussion inconnue.')
+            if chat.get('status') in ('running', 'approval'):
+                raise ValueError('Arrêter la discussion avant de la supprimer.')
+            self.drop_chat(key)
+            for task in self.db['tasks'].values():
+                if task.get('chatId') == key:
+                    task['chatId'] = None
+            if self.db.get('rgpdChat') == key:
+                self.db['rgpdChat'] = None
+            self.save()
+        try:
+            self.codex.call('thread/archive', {'threadId': key})
+        except Exception:
+            pass  # Local deletion is what matters; Codex archive is best effort.
+        return {'ok': True}
+
+    def merge_planned(self):
+        """One-time migration: fold the per-run threads of each job into a single thread."""
+        groups = {}
+        for task in self.db['tasks'].values():
+            ids = [r.get('chatId') for r in task.get('runs', []) if r.get('chatId') in self.db['chats']]
+            if ids:
+                groups[('task', task['id'])] = ids
+        for (kind, owner), ids in groups.items():
+            ids = sorted(dict.fromkeys(ids), key=lambda k: self.db['chats'][k].get('updated', 0))
+            keep = ids[-1]
+            if kind == 'task':
+                self.db['tasks'][owner]['chatId'] = keep
+                self.db['chats'][keep]['title'] = self.db['tasks'][owner]['name']
+            else:
+                self.db['rgpdChat'] = keep
+                self.db['chats'][keep]['title'] = 'Surveillance RGPD'
+            if len(ids) < 2:
+                continue
+            merged = []
+            for k in ids:
+                c = self.db['chats'][k]
+                stamp = dt.datetime.fromtimestamp(c.get('updated', 0), ZONE).strftime('%d/%m %H:%M')
+                merged.append({'role': 'run', 'text': 'Exécution · ' + stamp})
+                merged += [m for m in c['messages'] if m['role'] != 'user']
+            self.db['chats'][keep]['messages'] = merged
+            for k in ids[:-1]:
+                if self.db['chats'][k].get('status') not in ('running', 'approval'):
+                    self.db['chats'].pop(k)
+            for task in self.db['tasks'].values():
+                for r in task.get('runs', []):
+                    if r.get('chatId') in ids:
+                        r['chatId'] = keep
+            for b in self.db.get('rgpdBatches', {}).values():
+                if b.get('chatId') in ids:
+                    b['chatId'] = keep
+
+    def send(self, key, text, marker=None):
         if not text.strip() or len(text) > 100000:
             raise ValueError('Message vide ou trop long.')
         with self.lock:
@@ -425,7 +518,7 @@ class Application:
             self.codex.call('thread/resume', {'threadId': key})
             self.resume.add(key)
         with self.lock:
-            chat['messages'].append({'role': 'user', 'text': text})
+            chat['messages'].append({'role': 'run', 'text': marker} if marker else {'role': 'user', 'text': text})
             chat.update(status='running', error=None, updated=time.time())
             if chat['title'] == 'Nouvelle conversation':
                 chat['title'] = text.strip()[:55]
@@ -522,13 +615,13 @@ class Application:
         try:
             actions = action_options(task.get('actions'), legacy=True)
             policy = action_instructions(actions, task.get('accounts', MAILBOXES))
-            chat = self.new_chat(name, origin='planned', instructions=policy, actions=actions)
+            chat = self.planned_chat(task.get('chatId'), name, policy, actions)
             with self.lock:
-                task['activeChat'] = run['chatId'] = chat
+                task['activeChat'] = task['chatId'] = run['chatId'] = chat
                 run['status'] = 'running'
                 task['lastStatus'] = 'running'
                 self.save()
-            self.send(chat, prompt)
+            self.send(chat, prompt, marker='Exécution · ' + dt.datetime.now(ZONE).strftime('%d/%m %H:%M'))
         except Exception as e:
             with self.lock:
                 task.update(running=False, lastStatus='failed')
@@ -573,11 +666,52 @@ class Application:
                 threading.Thread(target=self.run_task, args=(key,), daemon=True).start()
             time.sleep(5)
 
+    @staticmethod
+    def rule_key(method, params):
+        """Stable identity of a request: same server/tool/command/permissions means same rule."""
+        subject = {k: params.get(k) for k in ('serverName', 'tool', 'permissions', 'command', 'cwd') if params.get(k)}
+        return method + ' ' + json.dumps(subject, sort_keys=True)
+
+    def answer(self, approval_id, p):
+        with self.lock:
+            item = self.approvals[approval_id]
+            if p.get('always') and p.get('decision') == 'accept' and not item['method'].endswith('/requestUserInput'):
+                rule = self.rule_key(item['method'], item['params'])
+                rules = self.db.setdefault('autoApprove', [])
+                if rule not in rules:
+                    rules.append(rule)
+            if item['method'].endswith('/requestUserInput'):
+                result = {'answers': p.get('answers', {})}
+            elif item['method'] == 'item/permissions/requestApproval':
+                if p.get('decision') not in ('accept', 'decline', 'cancel'):
+                    raise ValueError('Décision invalide.')
+                result = {'permissions': item['params'].get('permissions', {}) if p['decision'] == 'accept' else {}, 'scope': 'turn'}
+            elif item['method'] == 'mcpServer/elicitation/request':
+                if p.get('decision') not in ('accept', 'decline', 'cancel'):
+                    raise ValueError('Décision invalide.')
+                result = {'action': p['decision'], 'content': p.get('content')}
+            elif item['method'].endswith('/requestApproval'):
+                if p.get('decision') not in ('accept', 'decline', 'cancel'):
+                    raise ValueError('Décision invalide.')
+                result = {'decision': p['decision']}
+            else:
+                raise ValueError('Cette validation nécessite le client Codex officiel : ' + item['method'])
+            self.codex.write({'id': item['id'], 'result': result})
+            del self.approvals[approval_id]
+            chat = self.db['chats'].get(item.get('threadId'))
+            if chat:
+                chat.update(status='running', phase='thinking', activity='Reprise…')
+                self.emit_status(chat)
+            self.save()
+            return {'ok': True}
+
     def request(self, op, p):
         if op == 'state':
             return self.state(p.get('chatId'))
         if op == 'chat.new':
             return {'id': self.new_chat()}
+        if op == 'chat.delete':
+            return self.delete_chat(p['id'])
         if op == 'chat.send':
             return self.send(p['id'], p['text'])
         if op == 'chat.stop':
@@ -588,32 +722,7 @@ class Application:
         if op == 'account.login':
             return self.codex.call('account/login/start', {'type': 'chatgpt'})
         if op == 'approval.reply':
-            with self.lock:
-                item = self.approvals[p['id']]
-                if item['method'].endswith('/requestUserInput'):
-                    result = {'answers': p.get('answers', {})}
-                elif item['method'] == 'item/permissions/requestApproval':
-                    if p.get('decision') not in ('accept', 'decline', 'cancel'):
-                        raise ValueError('Décision invalide.')
-                    result = {'permissions': item['params'].get('permissions', {}) if p['decision'] == 'accept' else {}, 'scope': 'turn'}
-                elif item['method'] == 'mcpServer/elicitation/request':
-                    if p.get('decision') not in ('accept', 'decline', 'cancel'):
-                        raise ValueError('Décision invalide.')
-                    result = {'action': p['decision'], 'content': p.get('content')}
-                elif item['method'].endswith('/requestApproval'):
-                    if p.get('decision') not in ('accept', 'decline', 'cancel'):
-                        raise ValueError('Décision invalide.')
-                    result = {'decision': p['decision']}
-                else:
-                    raise ValueError('Cette validation nécessite le client Codex officiel : ' + item['method'])
-                self.codex.write({'id': item['id'], 'result': result})
-                del self.approvals[p['id']]
-                chat = self.db['chats'].get(item.get('threadId'))
-                if chat:
-                    chat.update(status='running', phase='thinking', activity='Reprise…')
-                    self.emit_status(chat)
-                self.save()
-                return {'ok': True}
+            return self.answer(p['id'], p)
         if op == 'task.save':
             return self.task_save(p)
         if op == 'task.toggle':

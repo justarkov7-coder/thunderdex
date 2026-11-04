@@ -28,3 +28,6 @@ header #new-chat{margin-left:auto;width:auto;border:0;color:var(--muted);font-si
 @media(prefers-reduced-motion:reduce){#run-status.spinning .status-logo img{animation:none;will-change:auto}}
 #chat-page{position:relative;isolation:isolate}
 #chat-page::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background-size:min(58vw,620px) auto;opacity:.65}
+
+.message.run{align-self:center;background:transparent;border:0;color:var(--muted);font-size:11px;padding:2px 10px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.04em}
+#delete-chat{margin-left:auto;width:auto;border:0;background:transparent;color:var(--muted);font-size:12px}#delete-chat:hover{color:light-dark(#a01818,#ffb4b4)}

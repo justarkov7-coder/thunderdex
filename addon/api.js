@@ -52,7 +52,7 @@ var mailTerminal = class extends ExtensionAPI {
   }
 
   async request(op, params) {
-    const allowed = ['state','chat.new','chat.send','chat.stop','account.login','approval.reply','task.save','task.toggle','task.delete','task.run'];
+    const allowed = ['state','chat.new','chat.send','chat.stop','chat.delete','account.login','approval.reply','task.save','task.toggle','task.delete','task.run'];
     if (!allowed.includes(op)) throw new Error('Action inconnue.');
     let result = null;
     const call = this.ipc({op, params}, line => { result ??= JSON.parse(line); });

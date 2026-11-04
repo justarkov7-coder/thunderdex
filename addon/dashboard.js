@@ -77,6 +77,8 @@ browser.mailTerminal.onChatEvent.addListener(event=>{
     if(/turn\/|request|completed/.test(event.method)){
       clearTimeout(changeTimer);changeTimer=setTimeout(refresh,80);
     }
+  }else if(event.kind==='deleted'){
+    selected=null;location.hash='ask';refresh();
   }else if(event.kind==='disconnected'){
     streamId=null;clearTimeout(timer);if(!document.hidden)timer=setTimeout(refresh,1500);
   }
@@ -116,7 +118,7 @@ function render(s) {
     for(const [index,m] of (chat?.messages||[]).entries()){
       const key=m.itemId||m.role+':'+index;keep.add(key);
       let n=Array.from(box.children).find(node=>node.dataset.key===key||m.itemId&&node.dataset.itemId===m.itemId);
-      if(!n){n=el('div',undefined,'message '+m.role);n.append(el('span',m.role==='user'?'Vous':'Thunderdex','role'),document.createTextNode(''));}
+      if(!n){n=el('div',undefined,'message '+m.role);if(m.role!=='run')n.append(el('span',m.role==='user'?'Vous':'Thunderdex','role'));n.append(document.createTextNode(''));}
       n.dataset.key=key;if(m.itemId)n.dataset.itemId=m.itemId;
       if(n.lastChild.data!==m.text)n.lastChild.data=m.text;
       if(n.parentNode!==box)box.append(n);
@@ -145,7 +147,7 @@ function render(s) {
         box.append(button('Répondre',async()=>{const values={};for(const [id,input] of Object.entries(answers))values[id]={answers:[input.value]};await api('approval.reply',{id:String(a.id),answers:values});}));
       }else{
         box.append(el('pre',p.reason||p.command||p.message||JSON.stringify(p,null,2)));
-        box.append(button('Autoriser',()=>api('approval.reply',{id:String(a.id),decision:'accept'})),button('Refuser',()=>api('approval.reply',{id:String(a.id),decision:'decline'})));
+        box.append(button('Autoriser',()=>api('approval.reply',{id:String(a.id),decision:'accept'})),button('Toujours autoriser',()=>api('approval.reply',{id:String(a.id),decision:'accept',always:true})),button('Refuser',()=>api('approval.reply',{id:String(a.id),decision:'decline'})));
       }
       $('approvals').append(box);
     }
@@ -247,3 +249,9 @@ for(const prefix of ['task']){
   $(prefix+'-window-enabled').addEventListener('change',()=>{$(prefix+'-window-fields').hidden=!$(prefix+'-window-enabled').checked;});
   $(prefix+'-mode').addEventListener('change',()=>{$(prefix+'-write-options').hidden=$(prefix+'-mode').value!=='write';});
 }
+
+$('delete-chat').addEventListener('click',async()=>{
+  if(!selected||!confirm('Supprimer cette discussion ?'))return;
+  try{const id=selected;browser.mailTerminal.streamStop();await api('chat.delete',{id});selected=null;messageKey='';renderedChat=null;location.hash=route().view==='planned'?'planned':'ask';await refresh();}catch(e){error(e);}
+});
+setInterval(()=>{$('delete-chat').hidden=!selected||['running','approval'].includes(state?.chat?.status);},500);
